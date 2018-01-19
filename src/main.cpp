@@ -201,7 +201,13 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  ///Global variables
+  double ref_vel = 0;
+  int lane = 1;
+  bool change_lane = false;
+  ///
+
+  h.onMessage([&change_lane, &ref_vel, &lane, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -250,11 +256,13 @@ int main() {
 			const int n_points = 3;
 			const double spacing = 30; ///meters
 			const double lane_width = 4.0; ///meters
-			const double ref_vel = 49.5;
 			const int steps = 50;
+			const double speed_limit = 49.5;
 
-			int lane = 1;
+
+			
 			int prev_size = previous_path_x.size();
+			
 
 			if (prev_size > 0) {
 				car_s = end_path_s;
@@ -275,8 +283,20 @@ int main() {
 
 					if ((check_car_s > car_s) && ((check_car_s - car_s) < 30)) {
 
+						///TODO lower speed and flag a lane change
+						change_lane = true;
+						too_close = true;
+						lane = abs(lane - 1) % 3;
 					}
 				}
+			}
+
+
+			if (too_close) {
+				ref_vel -= .224;
+			}
+			else if(ref_vel < speed_limit) {
+				ref_vel += .224;
 			}
 
 			///create a list of widely spaced xy waypoints, evenly spaced at 30m
@@ -315,9 +335,7 @@ int main() {
 				ptsy.push_back(ref_y);
 			}
 
-			int n_points = 3;
-			double spacing = 30; ///meters
-			double lane_width = 4.0; ///meters
+
 			
 
 			for (int i = 0; i < n_points; i++) {
