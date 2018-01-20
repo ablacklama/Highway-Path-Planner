@@ -201,13 +201,15 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  ///Global variables
+  ///Global variables/functions
   double ref_vel = 0;
   int lane = 1;
   bool change_lane = false;
+  bool following = false;
+  double follow_speed = 0.0;
   ///
 
-  h.onMessage([&change_lane, &ref_vel, &lane, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&follow_speed, &following ,&change_lane, &ref_vel, &lane, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -250,7 +252,7 @@ int main() {
           	vector<double> next_y_vals;
 
 
-          	/// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds START START START START START
+          	///TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds START START START START START
 
 			///define costants
 			const int n_points = 3;
@@ -259,16 +261,13 @@ int main() {
 			const int steps = 50;
 			const double speed_limit = 49.5;
 
-
-			
+			bool too_close = false;
 			int prev_size = previous_path_x.size();
-			
 
 			if (prev_size > 0) {
 				car_s = end_path_s;
 			}
-			bool too_close = false;
-
+			
 			///find ref_v to use
 			for (int i = 0; i < sensor_fusion.size(); i++) {
 				///check if car is in my lane
@@ -281,23 +280,50 @@ int main() {
 
 					check_car_s += ((double)prev_size * .02*check_speed);
 
-					if ((check_car_s > car_s) && ((check_car_s - car_s) < 30)) {
-
-						///TODO lower speed and flag a lane change
-						change_lane = true;
-						too_close = true;
-						lane = abs(lane - 1) % 3;
+					if ((check_car_s > car_s) && ((check_car_s - car_s) < 50)) {
+						//change_lane = true;
+						
+						following = true;
+						follow_speed = 2.23694 * check_speed;
+						if ((check_car_s > car_s) && ((check_car_s - car_s) < 30)) {
+							too_close = true;
+						}
 					}
 				}
 			}
-
+			
+			///speed for each state
+			double speed_wanted = speed_limit;
 
 			if (too_close) {
-				ref_vel -= .224;
+				speed_wanted = follow_speed - 10;
 			}
+			else if (following) {
+				speed_wanted = follow_speed;
+			}
+			///adjust speed less if close to desired speed
+			double adjustment = (speed_wanted - car_speed) / speed_wanted * .224 * 1.5;
+			if (abs(adjustment) > .224) {
+				if (adjustment < 0) adjustment = -.224;
+				else if (adjustment > 0) adjustment = .224;
+			}
+			ref_vel += adjustment;
+			
+
+		/*	if (too_close) {
+				ref_vel -= .224;
+				cout << "slowing down 1" << endl;
+
+			}
+			
 			else if(ref_vel < speed_limit) {
 				ref_vel += .224;
+				cout << "speeding up 2" << endl;
+
 			}
+			cout << ref_vel << endl;*/
+
+			
 
 			///create a list of widely spaced xy waypoints, evenly spaced at 30m
 			///later we fill fill these points in with spline
@@ -356,7 +382,6 @@ int main() {
 			}
 
 			tk::spline s;
-
 			s.set_points(ptsx, ptsy);
 
 			for (int i = 0; i < previous_path_x.size(); i++) {
