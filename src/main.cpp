@@ -203,13 +203,14 @@ int main() {
 
   ///Global variables/functions
   double ref_vel = 0;
-  int lane = 1;
+  int lane = 2;
   bool change_lane = false;
   bool following = false;
   double follow_speed = 0.0;
+  double follow_dist;
   ///
 
-  h.onMessage([&follow_speed, &following ,&change_lane, &ref_vel, &lane, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&follow_dist, &follow_speed, &following ,&change_lane, &ref_vel, &lane, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -268,28 +269,110 @@ int main() {
 				car_s = end_path_s;
 			}
 			
+
+			///create lists of cars for each lane
+			vector<vector<double>> l1;
+			vector<vector<double>> l2;
+			vector<vector<double>> l3;
+
+			for (int i = 0; i < sensor_fusion.size(); i++) {
+				double id = sensor_fusion[i][0];
+				double x = sensor_fusion[i][1];
+				double y = sensor_fusion[i][2];
+				double vx = sensor_fusion[i][3];
+				double vy = sensor_fusion[i][4];
+				double speed = sqrt(vx*vx + vy*vy);
+				double s = sensor_fusion[i][5];
+				double d = sensor_fusion[i][6];
+				double check_car_s = s + ((double)prev_size * .02*speed);
+				if (check_car_s < car_s + 100 && check_car_s > car_s - 20 && d > 0) {
+					int cur_lane = (int)floor(d / lane_width) + 1;
+
+					vector<double> temp = { id, x, y, vx, vy, speed, s, d };
+
+					switch (cur_lane) {
+					case 1: l1.push_back(temp);
+					case 2: l2.push_back(temp);
+					case 3: l3.push_back(temp);
+				}
+				
+				}
+			}
+
+
+			vector<int> lanes_beside;
+			if (lane == 1) lanes_beside.push_back(2);
+			if (lane == 2) {
+				lanes_beside.push_back(1);
+				lanes_beside.push_back(3);
+			}
+			if (lane == 3) lanes_beside.push_back(2);
+
+
+			///if a lane change is signaled, decide which lanes are safe to change too
+			if (change_lane) {
+				for (int l : lanes_beside) {
+					vector<vector<double>> car_list;
+					if (l == 1) car_list = l1;
+					if (l == 2) car_list = l2;
+					if (l == 3) car_list = l3;
+					bool safe = true;
+
+					for (vector<double> car : car_list) {
+						double vx = car[3];
+						double vy = car[4];
+						double speed = sqrt(vx*vx + vy*vy);
+						double check_car_s = car[5] + ((double)prev_size * .02*speed);
+						if (check_car_s > car_s - 10 && check_car_s < car_s + 40) {
+							safe = false;
+						}
+					}
+					if (safe) {
+						lane = l;
+						following = false;
+						change_lane = false;
+						break;
+					}
+
+				}
+			}
+
+			
+			vector<pair<double, double>> follow_list;
 			///find ref_v to use
 			for (int i = 0; i < sensor_fusion.size(); i++) {
 				///check if car is in my lane
 				float d = sensor_fusion[i][6];
-				if ((d < lane_width + lane_width*lane) && (d > lane_width*lane)) {
+				if ((d < lane_width + lane_width*(lane-1)) && (d > lane_width*(lane-1))) {
 					double vx = sensor_fusion[i][3];
 					double vy = sensor_fusion[i][4];
 					double check_speed = sqrt(vx*vx + vy*vy);
 					double check_car_s = sensor_fusion[i][5];
 
 					check_car_s += ((double)prev_size * .02*check_speed);
-
-					if ((check_car_s > car_s) && ((check_car_s - car_s) < 50)) {
-						//change_lane = true;
-						
+					double distance = check_car_s - car_s;
+					if ((check_car_s > car_s) && (distance < 50)) {
+					
 						following = true;
-						follow_speed = 2.23694 * check_speed;
-						if ((check_car_s > car_s) && ((check_car_s - car_s) < 30)) {
+						double temp_speed = 2.23694 * check_speed;
+						follow_list.push_back(pair<double, double>(distance, temp_speed));
+						if ((check_car_s > car_s) && (distance < 30)) {
 							too_close = true;
 						}
 					}
 				}
+			}
+
+			/// make sure to follow the car closest in front of our car.
+			if (following) {
+				pair<double, double> close_car_ahead(200.0, 200.0);
+				for (pair<double, double> p : follow_list) {
+					if (p.first < close_car_ahead.first) {
+						close_car_ahead = p;
+						follow_speed = close_car_ahead.second;
+					}
+				}
+				follow_dist = close_car_ahead.first;
 			}
 			
 			///speed for each state
@@ -309,19 +392,11 @@ int main() {
 			}
 			ref_vel += adjustment;
 			
-
-		/*	if (too_close) {
-				ref_vel -= .224;
-				cout << "slowing down 1" << endl;
-
+			///if car we're following is too slow, change lanes.
+			if (following && follow_speed < speed_limit - 5) {
+				change_lane = true;
 			}
-			
-			else if(ref_vel < speed_limit) {
-				ref_vel += .224;
-				cout << "speeding up 2" << endl;
-
-			}
-			cout << ref_vel << endl;*/
+		
 
 			
 
@@ -366,7 +441,8 @@ int main() {
 
 			for (int i = 0; i < n_points; i++) {
 				double temp_s = car_s + spacing + (spacing*i);
-				double temp_d = (lane_width / 2) + lane * lane_width;
+				double temp_d = (lane_width / 2) + (lane - 1) * lane_width;
+				cout << temp_d;
 				vector<double> next_wp = getXY(temp_s, temp_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 				
 				ptsx.push_back(next_wp[0]);
