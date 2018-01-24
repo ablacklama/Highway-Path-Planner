@@ -6,6 +6,10 @@
 
 #IncludeRegexTransform: 
 
+/mnt/c/Users/Spencer/Desktop/path-planning/src/CarData.h
+vector
+-
+
 /mnt/c/Users/Spencer/Desktop/path-planning/src/Eigen-3.3/Eigen/Cholesky
 Core
 /mnt/c/Users/Spencer/Desktop/path-planning/src/Eigen-3.3/Eigen/Core
@@ -851,6 +855,10 @@ json.hpp
 /mnt/c/Users/Spencer/Desktop/path-planning/src/json.hpp
 spline.h
 /mnt/c/Users/Spencer/Desktop/path-planning/src/spline.h
+unordered_map
+-
+CarData.h
+/mnt/c/Users/Spencer/Desktop/path-planning/src/CarData.h
 
 /mnt/c/Users/Spencer/Desktop/path-planning/src/spline.h
 cstdio

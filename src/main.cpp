@@ -9,6 +9,8 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
 #include "spline.h"
+#include <unordered_map>
+#include "CarData.h"
 
 using namespace std;
 
@@ -202,15 +204,15 @@ int main() {
   }
 
   ///Global variables/functions
-  double ref_vel = 0;
-  int lane = 2;
-  bool change_lane = false;
-  bool following = false;
-  double follow_speed = 0.0;
-  double follow_dist;
-  ///
 
-  h.onMessage([&follow_dist, &follow_speed, &following ,&change_lane, &ref_vel, &lane, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+
+ 
+
+  CarData *state = new CarData();
+  
+  ///END
+
+  h.onMessage([&state, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -255,6 +257,8 @@ int main() {
 
           	///TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds START START START START START
 
+			
+
 			///define costants
 			const int n_points = 3;
 			const double spacing = 30; ///meters
@@ -270,11 +274,8 @@ int main() {
 			}
 			
 
-			///create lists of cars for each lane
-			vector<vector<double>> l1;
-			vector<vector<double>> l2;
-			vector<vector<double>> l3;
-
+		
+	/*		vector<vector<double>> cars;
 			for (int i = 0; i < sensor_fusion.size(); i++) {
 				double id = sensor_fusion[i][0];
 				double x = sensor_fusion[i][1];
@@ -284,105 +285,84 @@ int main() {
 				double speed = sqrt(vx*vx + vy*vy);
 				double s = sensor_fusion[i][5];
 				double d = sensor_fusion[i][6];
-				double check_car_s = s + ((double)prev_size * .02*speed);
-				if (check_car_s < car_s + 100 && check_car_s > car_s - 20 && d > 0) {
-					int cur_lane = (int)floor(d / lane_width) + 1;
 
-					vector<double> temp = { id, x, y, vx, vy, speed, s, d };
 
-					switch (cur_lane) {
-					case 1: l1.push_back(temp);
-					case 2: l2.push_back(temp);
-					case 3: l3.push_back(temp);
-				}
-				
-				}
+				vector<double> temp = { id, x, y, vx, vy, s, d };
+				cars.push_back(temp);
 			}
+		}*/
 
-
-			vector<int> lanes_beside;
-			if (lane == 1) lanes_beside.push_back(2);
-			if (lane == 2) {
-				lanes_beside.push_back(1);
-				lanes_beside.push_back(3);
-			}
-			if (lane == 3) lanes_beside.push_back(2);
+			state->NewCars(sensor_fusion, prev_size);
 
 
 			///if a lane change is signaled, decide which lanes are safe to change too
-			if (change_lane) {
-				for (int l : lanes_beside) {
-					vector<vector<double>> car_list;
-					if (l == 1) car_list = l1;
-					if (l == 2) car_list = l2;
-					if (l == 3) car_list = l3;
-					bool safe = true;
+			if (state->change_lane) {
+				
+				///keep track of which lane is most open
+				double farthest = 0;
+				int farthest_lane = state->lane;
 
-					for (vector<double> car : car_list) {
-						double vx = car[3];
-						double vy = car[4];
-						double speed = sqrt(vx*vx + vy*vy);
-						double check_car_s = car[5] + ((double)prev_size * .02*speed);
-						if (check_car_s > car_s - 10 && check_car_s < car_s + 40) {
-							safe = false;
+				///for each lane
+				for (int i = 0; i < 3; i++) {
+
+					///if the lane is safe
+					if (state->Safe(car_s, i, -10, 20)) {
+
+						///see what the closest car ahead is
+						Car closest_car = state->ClosestInLane(i, car_s);
+
+						if (closest_car.init && closest_car.check_car_s - car_s > farthest) {
+							farthest = closest_car.check_car_s - car_s;
+							farthest_lane = i;
+						}
+
+						///if there isn't a car ahead of you in the lane
+						else {
+							farthest = 9999;
+							farthest_lane = i;
 						}
 					}
-					if (safe) {
-						lane = l;
-						following = false;
-						change_lane = false;
-						break;
-					}
+				}
 
+				if (abs(farthest_lane - state->lane) == 2) {
+					state->lane = 2;
+					cout << "lane changed too: " << 2 << endl;
+					state->following = false;
+					state->change_lane = false;
+				}
+				else if (abs(farthest_lane - state->lane) == 1 ) {
+					cout << "lane changed too: " << farthest_lane << endl;
+					state->lane = farthest_lane;
+					state->following = false;
+					state->change_lane = false;
 				}
 			}
+
 
 			
-			vector<pair<double, double>> follow_list;
+			
 			///find ref_v to use
-			for (int i = 0; i < sensor_fusion.size(); i++) {
-				///check if car is in my lane
-				float d = sensor_fusion[i][6];
-				if ((d < lane_width + lane_width*(lane-1)) && (d > lane_width*(lane-1))) {
-					double vx = sensor_fusion[i][3];
-					double vy = sensor_fusion[i][4];
-					double check_speed = sqrt(vx*vx + vy*vy);
-					double check_car_s = sensor_fusion[i][5];
-
-					check_car_s += ((double)prev_size * .02*check_speed);
-					double distance = check_car_s - car_s;
-					if ((check_car_s > car_s) && (distance < 50)) {
-					
-						following = true;
-						double temp_speed = 2.23694 * check_speed;
-						follow_list.push_back(pair<double, double>(distance, temp_speed));
-						if ((check_car_s > car_s) && (distance < 30)) {
-							too_close = true;
-						}
+			state->following = false;
+			Car ahead = state->ClosestInLane(state->lane, car_s);
+			if (ahead.init) {
+				double distance = ahead.check_car_s - car_s;
+				if (distance < 50) {
+					state->following = true;
+					state->follow_speed = 2.23694 * ahead.speed;
+					if (distance < 20) {
+						too_close = true;
 					}
 				}
-			}
-
-			/// make sure to follow the car closest in front of our car.
-			if (following) {
-				pair<double, double> close_car_ahead(200.0, 200.0);
-				for (pair<double, double> p : follow_list) {
-					if (p.first < close_car_ahead.first) {
-						close_car_ahead = p;
-						follow_speed = close_car_ahead.second;
-					}
-				}
-				follow_dist = close_car_ahead.first;
 			}
 			
 			///speed for each state
 			double speed_wanted = speed_limit;
 
 			if (too_close) {
-				speed_wanted = follow_speed - 10;
+				speed_wanted = state->follow_speed - 10;
 			}
-			else if (following) {
-				speed_wanted = follow_speed;
+			else if (state->following) {
+				speed_wanted = state->follow_speed;
 			}
 			///adjust speed less if close to desired speed
 			double adjustment = (speed_wanted - car_speed) / speed_wanted * .224 * 1.5;
@@ -390,11 +370,11 @@ int main() {
 				if (adjustment < 0) adjustment = -.224;
 				else if (adjustment > 0) adjustment = .224;
 			}
-			ref_vel += adjustment;
+			state->ref_vel += adjustment;
 			
 			///if car we're following is too slow, change lanes.
-			if (following && follow_speed < speed_limit - 5) {
-				change_lane = true;
+			if (state->following && state->follow_speed < speed_limit - 5) {
+				state->change_lane = true;
 			}
 		
 
@@ -441,8 +421,8 @@ int main() {
 
 			for (int i = 0; i < n_points; i++) {
 				double temp_s = car_s + spacing + (spacing*i);
-				double temp_d = (lane_width / 2) + (lane - 1) * lane_width;
-				cout << temp_d;
+				double temp_d = (lane_width / 2) + (state->lane - 1) * lane_width;
+				
 				vector<double> next_wp = getXY(temp_s, temp_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 				
 				ptsx.push_back(next_wp[0]);
@@ -470,7 +450,7 @@ int main() {
 			double target_dist = sqrt(target_x * target_x + target_y*target_y);
 
 			double x_add_on = 0;
-			double N = (target_dist / (.02*ref_vel / 2.24));
+			double N = (target_dist / (.02*state->ref_vel / 2.24));
 
 			for (int i = 1; i <= steps - previous_path_x.size(); i++) {
 				
