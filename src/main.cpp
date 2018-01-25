@@ -288,9 +288,7 @@ int main() {
 
 			state->NewCars(sensor_fusion, prev_size);
 
-			if (state->change_lane && state->lane_change_timeout < 20) {
-				cout << "TEST COMPLETE" << endl;
-			}
+			
 			///if a lane change is signaled, decide which lanes are safe to change too
 			if (state->change_lane && state->lane_change_timeout > 20) {
 				
