@@ -9,7 +9,6 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
 #include "spline.h"
-#include <unordered_map>
 #include "CarData.h"
 
 using namespace std;
@@ -203,14 +202,8 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  ///Global variables/functions
-
-
- 
-
+  ///Declare cardata instance
   CarData *state = new CarData();
-  
-  ///END
 
   h.onMessage([&state, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
@@ -265,6 +258,7 @@ int main() {
 			const double lane_width = 4.0; ///meters
 			const int steps = 50;
 			const double speed_limit = 49.5;
+			state->lane_change_timeout++;
 
 			bool too_close = false;
 			int prev_size = previous_path_x.size();
@@ -294,9 +288,11 @@ int main() {
 
 			state->NewCars(sensor_fusion, prev_size);
 
-
+			if (state->change_lane && state->lane_change_timeout < 20) {
+				cout << "TEST COMPLETE" << endl;
+			}
 			///if a lane change is signaled, decide which lanes are safe to change too
-			if (state->change_lane) {
+			if (state->change_lane && state->lane_change_timeout > 20) {
 				
 				///keep track of which lane is most open
 				double farthest = 0;
@@ -306,7 +302,7 @@ int main() {
 				for (int i = 0; i < 3; i++) {
 
 					///if the lane is safe
-					if (state->Safe(car_s, i, -10, 20)) {
+					if (state->Safe(car_s, i, -10, 10)) {
 
 						///see what the closest car ahead is
 						Car closest_car = state->ClosestInLane(i, car_s);
@@ -314,31 +310,36 @@ int main() {
 						if (closest_car.init && closest_car.check_car_s - car_s > farthest) {
 							farthest = closest_car.check_car_s - car_s;
 							farthest_lane = i;
+							
 						}
 
 						///if there isn't a car ahead of you in the lane
-						else {
+						else if(!closest_car.init){
 							farthest = 9999;
 							farthest_lane = i;
 						}
 					}
+
 				}
 
-				if (abs(farthest_lane - state->lane) == 2) {
-					state->lane = 2;
-					cout << "lane changed too: " << 2 << endl;
+				if (abs(farthest_lane - state->lane) == 2 && state->Safe(car_s, 1, -10, 20)) {
+					state->lane = 1;
+					cout << "lane changed too: " << 1 << endl;
 					state->following = false;
 					state->change_lane = false;
+					state->lane_change_timeout = 0;
 				}
 				else if (abs(farthest_lane - state->lane) == 1 ) {
 					cout << "lane changed too: " << farthest_lane << endl;
 					state->lane = farthest_lane;
 					state->following = false;
 					state->change_lane = false;
+					state->lane_change_timeout = 0;
+
 				}
 			}
 
-
+			///state->Print(car_s, 10);
 			
 			
 			///find ref_v to use
@@ -346,10 +347,10 @@ int main() {
 			Car ahead = state->ClosestInLane(state->lane, car_s);
 			if (ahead.init) {
 				double distance = ahead.check_car_s - car_s;
-				if (distance < 50) {
+				if (distance < 30) {
 					state->following = true;
 					state->follow_speed = 2.23694 * ahead.speed;
-					if (distance < 20) {
+					if (distance < 15) {
 						too_close = true;
 					}
 				}
@@ -376,7 +377,7 @@ int main() {
 			if (state->following && state->follow_speed < speed_limit - 5) {
 				state->change_lane = true;
 			}
-		
+
 
 			
 
@@ -421,7 +422,7 @@ int main() {
 
 			for (int i = 0; i < n_points; i++) {
 				double temp_s = car_s + spacing + (spacing*i);
-				double temp_d = (lane_width / 2) + (state->lane - 1) * lane_width;
+				double temp_d = (lane_width / 2) + (state->lane) * lane_width;
 				
 				vector<double> next_wp = getXY(temp_s, temp_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 				
