@@ -290,7 +290,7 @@ int main() {
 
 			
 			///if a lane change is signaled, decide which lanes are safe to change too
-			if (state->change_lane && state->lane_change_timeout > 20) {
+			if (state->change_lane && state->lane_change_timeout > 40) {
 				
 				///keep track of which lane is most open
 				double farthest = 0;
