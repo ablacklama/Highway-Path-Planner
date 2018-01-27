@@ -8,34 +8,42 @@
 using namespace std;
 
 struct Car {
-	bool init = false;
-	double id;
-	double x;
-	double y;
-	double vx;
-	double vy;
-	double speed;
-	double s;
-	double d;
-	int lane;
-	double check_car_s;
+	bool init = false; 		//quick way of telling whether a car object is empty
+	double id;				//unique identification
+	double x;				//cars x value
+	double y;				//cars y value
+	double vx;				//cars velocity in the x direction
+	double vy;				// cars velocity in the y direction
+	double speed;			//speed of the car
+	double s;				//cars frenet s coordinate
+	double d;				//cars frenet d coordinate
+	int lane;				//lane that the car is in
+	double check_car_s;		//where the car will be once the current path is done
 };
 
 class CarData {
 public:
-	vector<Car> cars;
-	double ref_vel = 0;
-	int lane = 0;
-	bool change_lane = false;
-	bool following = false;
-	double follow_speed = 0.0;
-	int lane_change_timeout = 0;
+	vector<Car> cars;			//list of cars from sensor fusion
+	double ref_vel = 0;			//our speed
+	int lane = 0;				//our current or desired lane
+	bool change_lane = false;	//keeps track of the lane change state
+	bool following = false;		//keeps track of the following state
+	double follow_speed = 0.0;	//speed of the car ahead of us
+	int lane_change_timeout = 0; //make sure we don't exicute two lange changes too quickly
 	
-	///get all cars in a lane
+	//return a vecort of all cars in a givin lane. NOTE: this isn't used in this code
 	vector<Car> GetLane(int lane);
+
+	//Process all cars from sensor fusion and add them to the cars list
 	void NewCars(vector<vector<double>> sfus, int prev_size);
+
+	//return the closest car in a given lane
 	Car ClosestInLane(int lane, double car_s);
+
+	//determain if there is a car in a given lane between the behind and infront values relative to your car.
 	bool Safe(double car_s, int lane, double behind = -10.0, double infront = 20.0);
+
+	//print information for debugging
 	void Print(double car_s, int print_steps);
 
 private:
@@ -78,7 +86,7 @@ Car CarData::ClosestInLane(int lane, double car_s) {
 	Car close;
 	for (Car car : cars) {
 		if (car.lane == lane && car.check_car_s - car_s > 0 && car.check_car_s - car_s < distance) {
-			//car must be present in both lanes
+			
 			distance = car.check_car_s - car_s;
 			close = car;
 		}
@@ -108,7 +116,7 @@ void CarData::Print(double car_s, int print_steps) {
 		Car ahead1 = ClosestInLane(1, car_s);
 		double d1 = ahead1.check_car_s - car_s;
 		Car ahead2 = ClosestInLane(2, car_s);
-		//error starts lane 2 same as lane 1
+		
 		double d2 = ahead2.check_car_s - car_s;
 		cout << "close: " << ((ahead0.init) ?to_string(d0):"N/A") << "\t" << ((ahead1.init)? to_string(d1) : "N/A") << "\t" << ((ahead2.init)? to_string(d2) : "N/A") << endl << endl;
 		
